@@ -1,0 +1,70 @@
+version: "0.1"
+
+networks:
+  wireguard:
+    name: wireguard
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.18.0.0/16"
+
+volumes:
+  wireguard-clients:
+    name: wireguard-clients
+  wireguard-keys:
+    name: wireguard-keys
+
+
+services:
+  db:
+    image: postgres
+    container_name: wireguard-database
+    networks:
+      wireguard:
+        ipv4_address: 172.18.0.2
+    env_file:
+      - ./.env
+    volumes:
+      - wireguard-clients:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  wireguard:
+    build: ./wireguard
+    image: wireguard-manager
+    container_name: wireguard-manager
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - POSTGRES_HOST=172.18.0.2
+    env_file:
+      - ./.env
+    volumes:
+      - /lib/modules:/lib/modules:ro  # kernel modules
+    ports:
+      - 51830:51830/udp
+      - 8080:8080
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    depends_on:
+      - db
+    volumes:
+      - wireguard-keys:/etc/wireguard/data
+    networks:
+      wireguard:
+        ipv4_address: 172.18.0.3
+  bot:
+    build: ./bot
+    image: wireguard-bot
+    container_name: wireguard-bot
+    depends_on:
+      - wireguard
+    environment:
+      - API_HOST=172.18.0.3:8080
+    env_file:
+      - ./.env
+    networks:
+      wireguard:
+
